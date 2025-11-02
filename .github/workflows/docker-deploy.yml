@@ -1,0 +1,44 @@
+name: CI/CD - Docker Deploy to Azure VM
+
+on:
+  push:
+    branches:
+      - main  # Runs when you push to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push backend image
+      run: |
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/project-app-backend:v1 ./backend
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/project-app-backend:v1
+
+    - name: Build and push frontend image
+      run: |
+        docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/project-app-frontend:v1 ./frontend
+        docker push ${{ secrets.DOCKERHUB_USERNAME }}/project-app-frontend:v1
+
+    - name: Deploy to Azure VM via SSH
+      uses: appleboy/ssh-action@v1.1.0
+      with:
+        host: ${{ secrets.VM_PUBLIC_IP }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/project-app-backend:v1
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/project-app-frontend:v1
+          docker stop backend_container || true && docker rm backend_container || true
+          docker stop frontend_container || true && docker rm frontend_container || true
+          docker run -d -p 5000:5000 --name backend_container ${{ secrets.DOCKERHUB_USERNAME }}/project-app-backend:v1
+          docker run -d -p 3000:3000 --name frontend_container ${{ secrets.DOCKERHUB_USERNAME }}/project-app-frontend:v1
